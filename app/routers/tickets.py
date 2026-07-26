@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-
+from app.security import require_roles
 from app.database import get_db
 
 router = APIRouter(
@@ -25,11 +25,9 @@ class TicketCreate(BaseModel):
 
 class TicketStatusUpdate(BaseModel):
     new_status: str
-    changed_by_user_id: int
 
 class TicketAssignmentCreate(BaseModel):
     technician_id: int
-    changed_by_user_id: int
 
 class TicketCommentCreate(BaseModel):
     user_id: int
@@ -164,6 +162,9 @@ def create_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
 def update_ticket_status(
     ticket_id: int,
     status_update: TicketStatusUpdate,
+    current_user: dict = Depends(
+        require_roles("ADMIN", "TECHNICIAN")
+    ),
     db: Session = Depends(get_db)
 ):
     allowed_statuses = {"OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"}
@@ -221,7 +222,7 @@ def update_ticket_status(
             "ticket_id": ticket_id,
             "old_status": old_status,
             "new_status": new_status,
-            "changed_by_user_id": status_update.changed_by_user_id
+            "changed_by_user_id": current_user["user_id"]
         })
 
         db.commit()
@@ -275,6 +276,7 @@ def get_ticket_status_history(
 def assign_ticket(
     ticket_id: int,
     assignment: TicketAssignmentCreate,
+    current_user: dict = Depends(require_roles("ADMIN")),
     db: Session = Depends(get_db)
 ):
     try:
@@ -354,7 +356,7 @@ def assign_ticket(
                     "ticket_id": ticket_id,
                     "old_status": old_status,
                     "new_status": new_status,
-                    "changed_by_user_id": assignment.changed_by_user_id
+                    "changed_by_user_id": current_user["user_id"]
                 }
             )
 

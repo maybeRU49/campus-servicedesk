@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.database import test_database_connection
-from app.routers import tickets, dashboard
+from app.routers import tickets, dashboard, auth
 
 app = FastAPI(
     title="Campus ServiceDesk API",
@@ -10,6 +10,7 @@ app = FastAPI(
 
 app.include_router(tickets.router)
 app.include_router(dashboard.router)
+app.include_router(auth.router)
 
 
 @app.get("/")
