@@ -1,11 +1,18 @@
 from fastapi import FastAPI
 from app.database import test_database_connection
 from app.routers import tickets, dashboard, auth
-
+from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(
     title="Campus ServiceDesk API",
     description="Backend API for Campus ServiceDesk and Asset Management System",
     version="1.0.0"
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(tickets.router)
