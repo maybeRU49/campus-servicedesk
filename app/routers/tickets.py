@@ -1,7 +1,7 @@
-from typing import Optional
+from typing import Optional, Literal
+from pydantic import BaseModel, Field
 from app.security import get_current_user, require_roles
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -15,21 +15,33 @@ router = APIRouter(
 
 
 class TicketCreate(BaseModel):
-    title: str
-    description: str
-    category: str
-    priority: str = "MEDIUM"
-    department_id: Optional[int] = None
-    asset_id: Optional[int] = None
+    title: str = Field(min_length=3, max_length=150)
+    description: str = Field(min_length=5, max_length=2000)
+    category: str = Field(min_length=2, max_length=50)
+
+    priority: Literal[
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+    ] = "MEDIUM"
+
+    department_id: Optional[int] = Field(default=None, gt=0)
+    asset_id: Optional[int] = Field(default=None, gt=0)
 
 class TicketStatusUpdate(BaseModel):
-    new_status: str
+    new_status: Literal[
+        "OPEN",
+        "IN_PROGRESS",
+        "RESOLVED",
+        "CLOSED"
+    ]
 
 class TicketAssignmentCreate(BaseModel):
     technician_id: int
 
 class TicketCommentCreate(BaseModel):
-    comment_text: str
+    comment_text: str = Field(min_length=2, max_length=1000)
 
 @router.get("/")
 def get_tickets(db: Session = Depends(get_db)):
@@ -171,15 +183,7 @@ def update_ticket_status(
     ),
     db: Session = Depends(get_db)
 ):
-    allowed_statuses = {"OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"}
-    new_status = status_update.new_status.upper()
-
-    if new_status not in allowed_statuses:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid status. Use OPEN, IN_PROGRESS, RESOLVED, or CLOSED."
-        )
-
+    new_status = status_update.new_status
     try:
         current_ticket = db.execute(
             text("SELECT status FROM tickets WHERE ticket_id = :ticket_id"),
