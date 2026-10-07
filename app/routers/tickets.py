@@ -1,5 +1,5 @@
 from typing import Optional
-
+from app.security import get_current_user, require_roles
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -19,7 +19,6 @@ class TicketCreate(BaseModel):
     description: str
     category: str
     priority: str = "MEDIUM"
-    requester_id: int
     department_id: Optional[int] = None
     asset_id: Optional[int] = None
 
@@ -30,7 +29,6 @@ class TicketAssignmentCreate(BaseModel):
     technician_id: int
 
 class TicketCommentCreate(BaseModel):
-    user_id: int
     comment_text: str
 
 @router.get("/")
@@ -93,7 +91,11 @@ def get_ticket_by_id(
         "ticket": dict(result._mapping)
     }
 @router.post("/")
-def create_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
+def create_ticket(
+    ticket: TicketCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     try:
         insert_query = text("""
             INSERT INTO tickets (
@@ -118,7 +120,9 @@ def create_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
             );
         """)
 
-        result = db.execute(insert_query, ticket.model_dump())
+        ticket_data = ticket.model_dump()
+        ticket_data["requester_id"] = current_user["user_id"]
+        result = db.execute(insert_query, ticket_data)
         db.commit()
 
         new_ticket_id = result.lastrowid
@@ -407,6 +411,7 @@ def get_ticket_comments(
 def add_ticket_comment(
     ticket_id: int,
     comment: TicketCommentCreate,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     ticket = db.execute(
@@ -416,14 +421,6 @@ def add_ticket_comment(
 
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    user = db.execute(
-        text("SELECT user_id FROM users WHERE user_id = :user_id"),
-        {"user_id": comment.user_id}
-    ).first()
-
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
 
     try:
         insert_query = text("""
@@ -441,7 +438,7 @@ def add_ticket_comment(
 
         result = db.execute(insert_query, {
             "ticket_id": ticket_id,
-            "user_id": comment.user_id,
+            "user_id": current_user["user_id"],
             "comment_text": comment.comment_text
         })
 
