@@ -78,20 +78,23 @@ def get_ticket_by_id(
 ):
     query = text("""
         SELECT
-            ticket_id,
-            title,
-            category,
-            priority,
-            status,
-            requester,
-            department_name,
-            asset_name,
-            assigned_technician,
-            created_at,
-            updated_at,
-            resolved_at
-        FROM vw_ticket_details
-        WHERE ticket_id = :ticket_id;
+            v.ticket_id,
+            v.title,
+            t.description,
+            v.category,
+            v.priority,
+            v.status,
+            v.requester,
+            v.department_name,
+            v.asset_name,
+            v.assigned_technician,
+            v.created_at,
+            v.updated_at,
+            v.resolved_at
+        FROM vw_ticket_details v
+        JOIN tickets t
+            ON v.ticket_id = t.ticket_id
+        WHERE v.ticket_id = :ticket_id;
     """)
 
     result = db.execute(query, {"ticket_id": ticket_id}).first()
