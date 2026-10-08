@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
 const API_URL = "http://127.0.0.1:8000";
+
 
 function App() {
   const [email, setEmail] = useState("");
@@ -9,14 +10,14 @@ function App() {
   const [loginMessage, setLoginMessage] = useState("");
 
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem("user");
+    const saved = localStorage.getItem("user");
 
-    if (!savedUser) {
+    if (!saved) {
       return null;
     }
 
     try {
-      return JSON.parse(savedUser);
+      return JSON.parse(saved);
     } catch {
       return null;
     }
@@ -28,15 +29,25 @@ function App() {
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState("");
 
+  const [technicians, setTechnicians] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [assets, setAssets] = useState([]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("MEDIUM");
+
+  const [departmentId, setDepartmentId] = useState("");
+  const [assetId, setAssetId] = useState("");
+
   const [ticketMessage, setTicketMessage] = useState("");
 
   const [selectedTicket, setSelectedTicket] = useState(null);
+
   const [comments, setComments] = useState([]);
   const [history, setHistory] = useState([]);
+
   const [detailsError, setDetailsError] = useState("");
 
   const [commentText, setCommentText] = useState("");
@@ -45,38 +56,232 @@ function App() {
   const [newStatus, setNewStatus] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
-  const [technicians, setTechnicians] = useState([]);
   const [selectedTechnician, setSelectedTechnician] = useState("");
   const [assignmentMessage, setAssignmentMessage] = useState("");
+
 
   function getToken() {
     return localStorage.getItem("access_token");
   }
 
-  function authHeaders(token = null) {
+
+  function authHeaders(optionalToken = null) {
     return {
-      Authorization: `Bearer ${token || getToken()}`,
+      Authorization:
+        `Bearer ${optionalToken || getToken()}`,
     };
   }
+
+
+  function getErrorMessage(
+    data,
+    fallback
+  ) {
+    if (typeof data?.detail === "string") {
+      return data.detail;
+    }
+
+    if (Array.isArray(data?.detail)) {
+      return data.detail
+        .map((item) => item.msg)
+        .join(", ");
+    }
+
+    return fallback;
+  }
+
+
+  async function loadDashboard(
+    optionalToken = null
+  ) {
+    try {
+      const response = await fetch(
+        `${API_URL}/dashboard/summary`,
+        {
+          headers:
+            authHeaders(optionalToken),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setDashboardError(
+          getErrorMessage(
+            data,
+            "Could not load dashboard."
+          )
+        );
+
+        return;
+      }
+
+      setDashboard(data);
+      setDashboardError("");
+
+    } catch {
+      setDashboardError(
+        "Could not connect to the backend."
+      );
+    }
+  }
+
+
+  async function loadTickets(
+    optionalToken = null
+  ) {
+    try {
+      const response = await fetch(
+        `${API_URL}/tickets/`,
+        {
+          headers:
+            authHeaders(optionalToken),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setTicketsError(
+          getErrorMessage(
+            data,
+            "Could not load tickets."
+          )
+        );
+
+        return;
+      }
+
+      setTickets(
+        data.tickets || []
+      );
+
+      setTicketsError("");
+
+    } catch {
+      setTicketsError(
+        "Could not connect to the backend."
+      );
+    }
+  }
+
+
+  async function loadLookups(
+    optionalToken = null
+  ) {
+    const headers =
+      authHeaders(optionalToken);
+
+    try {
+      const [
+        techniciansResponse,
+        departmentsResponse,
+        assetsResponse,
+      ] = await Promise.all([
+        fetch(
+          `${API_URL}/technicians/`,
+          { headers }
+        ),
+
+        fetch(
+          `${API_URL}/lookups/departments`,
+          { headers }
+        ),
+
+        fetch(
+          `${API_URL}/lookups/assets`,
+          { headers }
+        ),
+      ]);
+
+      if (techniciansResponse.ok) {
+        const data =
+          await techniciansResponse.json();
+
+        setTechnicians(
+          data.technicians || []
+        );
+      }
+
+      if (departmentsResponse.ok) {
+        const data =
+          await departmentsResponse.json();
+
+        setDepartments(
+          data.departments || []
+        );
+      }
+
+      if (assetsResponse.ok) {
+        const data =
+          await assetsResponse.json();
+
+        setAssets(
+          data.assets || []
+        );
+      }
+
+    } catch {
+      console.log(
+        "Could not load lookup data."
+      );
+    }
+  }
+
+
+  async function refreshAll(
+    optionalToken = null
+  ) {
+    await Promise.all([
+      loadDashboard(optionalToken),
+      loadTickets(optionalToken),
+      loadLookups(optionalToken),
+    ]);
+  }
+
+
+  useEffect(() => {
+    if (
+      user &&
+      getToken()
+    ) {
+      refreshAll();
+    }
+
+    // Run only when the application initially loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   async function handleLogin(event) {
     event.preventDefault();
 
     setLoginMessage("");
 
-    const formData = new URLSearchParams();
+    const formData =
+      new URLSearchParams();
 
-    formData.append("username", email);
-    formData.append("password", password);
+    formData.append(
+      "username",
+      email
+    );
+
+    formData.append(
+      "password",
+      password
+    );
 
     try {
       const response = await fetch(
         `${API_URL}/auth/login`,
         {
           method: "POST",
+
           headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type":
+              "application/x-www-form-urlencoded",
           },
+
           body: formData,
         }
       );
@@ -85,8 +290,12 @@ function App() {
 
       if (!response.ok) {
         setLoginMessage(
-          data.detail || "Login failed."
+          getErrorMessage(
+            data,
+            "Login failed."
+          )
         );
+
         return;
       }
 
@@ -105,9 +314,10 @@ function App() {
       setEmail("");
       setPassword("");
 
-      await loadDashboard(data.access_token);
-      await loadTickets(data.access_token);
-      await loadTechnicians(data.access_token);
+      await refreshAll(
+        data.access_token
+      );
+
     } catch {
       setLoginMessage(
         "Could not connect to the backend."
@@ -115,21 +325,29 @@ function App() {
     }
   }
 
+
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("user");
+    localStorage.removeItem(
+      "access_token"
+    );
+
+    localStorage.removeItem(
+      "user"
+    );
 
     setUser(null);
 
     setDashboard(null);
     setTickets([]);
 
+    setTechnicians([]);
+    setDepartments([]);
+    setAssets([]);
+
     setSelectedTicket(null);
+
     setComments([]);
     setHistory([]);
-
-    setTechnicians([]);
-    setSelectedTechnician("");
 
     setLoginMessage("");
     setTicketMessage("");
@@ -138,92 +356,6 @@ function App() {
     setAssignmentMessage("");
   }
 
-  async function loadDashboard(optionalToken = null) {
-    const token = optionalToken || getToken();
-
-    try {
-      const response = await fetch(
-        `${API_URL}/dashboard/summary`,
-        {
-          headers: authHeaders(token),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setDashboardError(
-          "Could not load dashboard."
-        );
-        return;
-      }
-
-      setDashboard(data);
-      setDashboardError("");
-    } catch {
-      setDashboardError(
-        "Could not connect to the backend."
-      );
-    }
-  }
-
-  async function loadTickets(optionalToken = null) {
-    const token = optionalToken || getToken();
-
-    try {
-      const response = await fetch(
-        `${API_URL}/tickets/`,
-        {
-          headers: authHeaders(token),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setTicketsError(
-          "Could not load tickets."
-        );
-        return;
-      }
-
-      setTickets(data.tickets || []);
-      setTicketsError("");
-    } catch {
-      setTicketsError(
-        "Could not connect to the backend."
-      );
-    }
-  }
-
-  async function loadTechnicians(
-    optionalToken = null
-  ) {
-    const token = optionalToken || getToken();
-
-    try {
-      const response = await fetch(
-        `${API_URL}/technicians/`,
-        {
-          headers: authHeaders(token),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return;
-      }
-
-      setTechnicians(
-        data.technicians || []
-      );
-    } catch {
-      console.log(
-        "Could not load technicians."
-      );
-    }
-  }
 
   async function createTicket(event) {
     event.preventDefault();
@@ -235,8 +367,16 @@ function App() {
       description,
       category,
       priority,
-      department_id: null,
-      asset_id: null,
+
+      department_id:
+        departmentId
+          ? Number(departmentId)
+          : null,
+
+      asset_id:
+        assetId
+          ? Number(assetId)
+          : null,
     };
 
     try {
@@ -244,28 +384,31 @@ function App() {
         `${API_URL}/tickets/`,
         {
           method: "POST",
+
           headers: {
             ...authHeaders(),
-            "Content-Type": "application/json",
+
+            "Content-Type":
+              "application/json",
           },
-          body: JSON.stringify(newTicket),
+
+          body:
+            JSON.stringify(
+              newTicket
+            ),
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
-        if (data.detail) {
-          setTicketMessage(
-            typeof data.detail === "string"
-              ? data.detail
-              : "Please check the entered values."
-          );
-        } else {
-          setTicketMessage(
+        setTicketMessage(
+          getErrorMessage(
+            data,
             "Could not create ticket."
-          );
-        }
+          )
+        );
 
         return;
       }
@@ -279,8 +422,14 @@ function App() {
       setCategory("");
       setPriority("MEDIUM");
 
-      await loadTickets();
-      await loadDashboard();
+      setDepartmentId("");
+      setAssetId("");
+
+      await Promise.all([
+        loadTickets(),
+        loadDashboard(),
+      ]);
+
     } catch {
       setTicketMessage(
         "Could not connect to the backend."
@@ -288,16 +437,19 @@ function App() {
     }
   }
 
-  async function openTicket(ticketId) {
+
+  async function openTicket(
+    ticketId
+  ) {
     setDetailsError("");
+
     setCommentMessage("");
     setStatusMessage("");
     setAssignmentMessage("");
 
-    await loadTechnicians();
-
     try {
-      const headers = authHeaders();
+      const headers =
+        authHeaders();
 
       const [
         ticketResponse,
@@ -321,9 +473,16 @@ function App() {
       ]);
 
       if (!ticketResponse.ok) {
+        const data =
+          await ticketResponse.json();
+
         setDetailsError(
-          "Could not load ticket details."
+          getErrorMessage(
+            data,
+            "Could not load ticket details."
+          )
         );
+
         return;
       }
 
@@ -341,9 +500,12 @@ function App() {
           : { history: [] };
 
       const ticket =
-        ticketData.ticket || ticketData;
+        ticketData.ticket ||
+        ticketData;
 
-      setSelectedTicket(ticket);
+      setSelectedTicket(
+        ticket
+      );
 
       setComments(
         commentsData.comments || []
@@ -358,12 +520,16 @@ function App() {
       );
 
       setSelectedTechnician("");
+
+      await loadLookups();
+
     } catch {
       setDetailsError(
         "Could not connect to the backend."
       );
     }
   }
+
 
   async function addComment(event) {
     event.preventDefault();
@@ -372,30 +538,35 @@ function App() {
       return;
     }
 
-    setCommentMessage("");
-
     try {
       const response = await fetch(
         `${API_URL}/tickets/${selectedTicket.ticket_id}/comments`,
         {
           method: "POST",
+
           headers: {
             ...authHeaders(),
-            "Content-Type": "application/json",
+
+            "Content-Type":
+              "application/json",
           },
+
           body: JSON.stringify({
-            comment_text: commentText,
+            comment_text:
+              commentText,
           }),
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         setCommentMessage(
-          typeof data.detail === "string"
-            ? data.detail
-            : "Could not add comment."
+          getErrorMessage(
+            data,
+            "Could not add comment."
+          )
         );
 
         return;
@@ -403,19 +574,21 @@ function App() {
 
       setCommentText("");
 
+      await openTicket(
+        selectedTicket.ticket_id
+      );
+
       setCommentMessage(
         "Comment added successfully."
       );
 
-      await openTicket(
-        selectedTicket.ticket_id
-      );
     } catch {
       setCommentMessage(
         "Could not connect to the backend."
       );
     }
   }
+
 
   async function updateStatus(event) {
     event.preventDefault();
@@ -424,45 +597,54 @@ function App() {
       return;
     }
 
-    setStatusMessage("");
-
     try {
       const response = await fetch(
         `${API_URL}/tickets/${selectedTicket.ticket_id}/status`,
         {
           method: "PUT",
+
           headers: {
             ...authHeaders(),
-            "Content-Type": "application/json",
+
+            "Content-Type":
+              "application/json",
           },
+
           body: JSON.stringify({
-            new_status: newStatus,
+            new_status:
+              newStatus,
           }),
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         setStatusMessage(
-          typeof data.detail === "string"
-            ? data.detail
-            : "Could not update status."
+          getErrorMessage(
+            data,
+            "Could not update status."
+          )
         );
 
         return;
       }
 
-      setStatusMessage(
-        "Status updated successfully."
-      );
-
       await openTicket(
         selectedTicket.ticket_id
       );
 
-      await loadTickets();
-      await loadDashboard();
+      await Promise.all([
+        loadTickets(),
+        loadDashboard(),
+      ]);
+
+      setStatusMessage(
+        data.message ||
+        "Status updated successfully."
+      );
+
     } catch {
       setStatusMessage(
         "Could not connect to the backend."
@@ -470,7 +652,10 @@ function App() {
     }
   }
 
-  async function assignTechnician(event) {
+
+  async function assignTechnician(
+    event
+  ) {
     event.preventDefault();
 
     if (
@@ -480,42 +665,45 @@ function App() {
       setAssignmentMessage(
         "Please select a technician."
       );
+
       return;
     }
-
-    setAssignmentMessage("");
 
     try {
       const response = await fetch(
         `${API_URL}/tickets/${selectedTicket.ticket_id}/assign`,
         {
           method: "POST",
+
           headers: {
             ...authHeaders(),
-            "Content-Type": "application/json",
+
+            "Content-Type":
+              "application/json",
           },
+
           body: JSON.stringify({
             technician_id:
-              Number(selectedTechnician),
+              Number(
+                selectedTechnician
+              ),
           }),
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         setAssignmentMessage(
-          typeof data.detail === "string"
-            ? data.detail
-            : "Could not assign technician."
+          getErrorMessage(
+            data,
+            "Could not assign technician."
+          )
         );
 
         return;
       }
-
-      setAssignmentMessage(
-        "Technician assigned successfully."
-      );
 
       setSelectedTechnician("");
 
@@ -523,8 +711,15 @@ function App() {
         selectedTicket.ticket_id
       );
 
-      await loadTickets();
-      await loadDashboard();
+      await Promise.all([
+        loadTickets(),
+        loadDashboard(),
+      ]);
+
+      setAssignmentMessage(
+        "Technician assigned successfully."
+      );
+
     } catch {
       setAssignmentMessage(
         "Could not connect to the backend."
@@ -532,87 +727,143 @@ function App() {
     }
   }
 
-  async function refreshAll() {
-    await loadDashboard();
-    await loadTickets();
-    await loadTechnicians();
-  }
+
+  const filteredAssets =
+    departmentId
+      ? assets.filter(
+          (asset) =>
+            String(
+              asset.department_id
+            ) ===
+            String(
+              departmentId
+            )
+        )
+      : assets;
+
 
   if (!user) {
     return (
       <div className="login-page">
+
         <div className="login-card">
-          <h1>Campus ServiceDesk</h1>
+
+          <h1>
+            Campus ServiceDesk
+          </h1>
 
           <p className="subtitle">
             IT Support & Asset Management
           </p>
 
-          <h2>Login</h2>
+          <h2>
+            Login
+          </h2>
 
-          <form onSubmit={handleLogin}>
-            <label>Email</label>
+          <form
+            onSubmit={handleLogin}
+          >
+
+            <label>
+              Email
+            </label>
 
             <input
               type="email"
+
               value={email}
+
               onChange={(event) =>
-                setEmail(event.target.value)
+                setEmail(
+                  event.target.value
+                )
               }
-              placeholder="admin@example.com"
+
+              placeholder=
+                "admin@example.com"
+
               required
             />
 
-            <label>Password</label>
+
+            <label>
+              Password
+            </label>
 
             <input
               type="password"
+
               value={password}
+
               onChange={(event) =>
-                setPassword(event.target.value)
+                setPassword(
+                  event.target.value
+                )
               }
+
               required
             />
+
 
             <button type="submit">
               Login
             </button>
+
           </form>
+
 
           {loginMessage && (
             <p className="message error">
               {loginMessage}
             </p>
           )}
+
         </div>
+
       </div>
     );
   }
 
+
   if (selectedTicket) {
     return (
       <div className="app">
+
         <header className="topbar">
+
           <div>
-            <h1>Campus ServiceDesk</h1>
+            <h1>
+              Campus ServiceDesk
+            </h1>
 
             <p>
               Logged in as{" "}
-              {user.full_name} ({user.role})
+              {user.full_name}
+              {" "}
+              ({user.role})
             </p>
           </div>
 
+
           <button
-            className="secondary-button"
-            onClick={handleLogout}
+            className=
+              "secondary-button"
+
+            onClick=
+              {handleLogout}
           >
             Logout
           </button>
+
         </header>
 
+
         <main className="content">
+
           <button
-            className="secondary-button"
+            className=
+              "secondary-button"
+
             onClick={() =>
               setSelectedTicket(null)
             }
@@ -620,54 +871,89 @@ function App() {
             ← Back to Tickets
           </button>
 
-          <section className="panel ticket-detail">
+
+          <section
+            className=
+              "panel ticket-detail"
+          >
+
             <h2>
               {selectedTicket.title}
             </h2>
 
+
             <div className="detail-grid">
+
               <div>
                 <strong>
                   Ticket ID
                 </strong>
 
                 <span>
-                  {selectedTicket.ticket_id}
+                  {
+                    selectedTicket
+                    .ticket_id
+                  }
                 </span>
               </div>
+
 
               <div>
-                <strong>Status</strong>
+                <strong>
+                  Status
+                </strong>
 
                 <span>
-                  {selectedTicket.status}
+                  {
+                    selectedTicket
+                    .status
+                  }
                 </span>
               </div>
+
 
               <div>
-                <strong>Priority</strong>
+                <strong>
+                  Priority
+                </strong>
 
                 <span>
-                  {selectedTicket.priority}
+                  {
+                    selectedTicket
+                    .priority
+                  }
                 </span>
               </div>
+
 
               <div>
-                <strong>Category</strong>
+                <strong>
+                  Category
+                </strong>
 
                 <span>
-                  {selectedTicket.category}
+                  {
+                    selectedTicket
+                    .category
+                  }
                 </span>
               </div>
+
 
               <div>
-                <strong>Requester</strong>
+                <strong>
+                  Requester
+                </strong>
 
                 <span>
-                  {selectedTicket.requester ||
-                    "Unknown"}
+                  {
+                    selectedTicket
+                    .requester ||
+                    "Unknown"
+                  }
                 </span>
               </div>
+
 
               <div>
                 <strong>
@@ -675,19 +961,29 @@ function App() {
                 </strong>
 
                 <span>
-                  {selectedTicket.department_name ||
-                    "None"}
+                  {
+                    selectedTicket
+                    .department_name ||
+                    "None"
+                  }
                 </span>
               </div>
+
 
               <div>
-                <strong>Asset</strong>
+                <strong>
+                  Asset
+                </strong>
 
                 <span>
-                  {selectedTicket.asset_name ||
-                    "None"}
+                  {
+                    selectedTicket
+                    .asset_name ||
+                    "None"
+                  }
                 </span>
               </div>
+
 
               <div>
                 <strong>
@@ -695,107 +991,163 @@ function App() {
                 </strong>
 
                 <span>
-                  {selectedTicket.assigned_technician ||
-                    "Unassigned"}
+                  {
+                    selectedTicket
+                    .assigned_technician ||
+                    "Unassigned"
+                  }
                 </span>
               </div>
+
             </div>
 
-            <h3>Description</h3>
+
+            <h3>
+              Description
+            </h3>
 
             <p>
-              {selectedTicket.description ||
-                "No description available."}
+              {
+                selectedTicket
+                .description ||
+                "No description available."
+              }
             </p>
+
           </section>
 
+
           {user.role === "ADMIN" && (
+
             <section className="panel">
+
               <h2>
                 Assign Technician
               </h2>
 
+
               <form
                 className="inline-form"
-                onSubmit={
-                  assignTechnician
-                }
+
+                onSubmit=
+                  {assignTechnician}
               >
+
                 <select
-                  value={
-                    selectedTechnician
-                  }
+                  value=
+                    {selectedTechnician}
+
                   onChange={(event) =>
                     setSelectedTechnician(
                       event.target.value
                     )
                   }
+
                   required
                 >
+
                   <option value="">
                     Select technician
                   </option>
 
+
                   {technicians.map(
                     (technician) => (
+
                       <option
                         key={
-                          technician.technician_id
+                          technician
+                          .technician_id
                         }
+
                         value={
-                          technician.technician_id
+                          technician
+                          .technician_id
                         }
+
                         disabled={
-                          !technician.is_available
+                          !technician
+                          .is_available
                         }
                       >
+
                         {
-                          technician.full_name
+                          technician
+                          .full_name
                         }
 
-                        {technician.specialization
-                          ? ` - ${technician.specialization}`
-                          : ""}
+                        {
+                          technician
+                          .specialization
+                            ? ` - ${
+                                technician
+                                .specialization
+                              }`
+                            : ""
+                        }
 
-                        {!technician.is_available
-                          ? " (Unavailable)"
-                          : ""}
+                        {
+                          !technician
+                          .is_available
+                            ? " (Unavailable)"
+                            : ""
+                        }
+
                       </option>
+
                     )
                   )}
+
                 </select>
+
 
                 <button type="submit">
                   Assign Technician
                 </button>
+
               </form>
+
 
               {assignmentMessage && (
                 <p className="message">
                   {assignmentMessage}
                 </p>
               )}
+
             </section>
+
           )}
 
-          {(user.role === "ADMIN" ||
-            user.role ===
-              "TECHNICIAN") && (
+
+          {(
+            user.role === "ADMIN" ||
+            user.role === "TECHNICIAN"
+          ) && (
+
             <section className="panel">
-              <h2>Update Status</h2>
+
+              <h2>
+                Update Status
+              </h2>
+
 
               <form
                 className="inline-form"
-                onSubmit={updateStatus}
+
+                onSubmit=
+                  {updateStatus}
               >
+
                 <select
                   value={newStatus}
+
                   onChange={(event) =>
                     setNewStatus(
                       event.target.value
                     )
                   }
                 >
+
                   <option value="OPEN">
                     OPEN
                   </option>
@@ -811,167 +1163,265 @@ function App() {
                   <option value="CLOSED">
                     CLOSED
                   </option>
+
                 </select>
+
 
                 <button type="submit">
                   Update Status
                 </button>
+
               </form>
+
 
               {statusMessage && (
                 <p className="message">
                   {statusMessage}
                 </p>
               )}
+
             </section>
+
           )}
 
+
           <section className="panel">
-            <h2>Comments</h2>
+
+            <h2>
+              Comments
+            </h2>
+
 
             {comments.length === 0 ? (
-              <p>No comments yet.</p>
+
+              <p>
+                No comments yet.
+              </p>
+
             ) : (
+
               <div className="comments">
+
                 {comments.map(
                   (comment) => (
+
                     <div
                       className="comment"
+
                       key={
                         comment.comment_id
                       }
                     >
+
                       <strong>
-                        {comment.commented_by ||
-                          "Unknown User"}
+                        {
+                          comment
+                          .commented_by ||
+                          "Unknown User"
+                        }
                       </strong>
+
 
                       <p>
                         {
-                          comment.comment_text
+                          comment
+                          .comment_text
                         }
                       </p>
 
+
                       <small>
-                        {comment.created_at ||
-                          ""}
+                        {
+                          comment
+                          .created_at ||
+                          ""
+                        }
                       </small>
+
                     </div>
+
                   )
                 )}
+
               </div>
+
             )}
+
 
             <form
               className="comment-form"
-              onSubmit={addComment}
+
+              onSubmit=
+                {addComment}
             >
+
               <textarea
                 value={commentText}
+
                 onChange={(event) =>
                   setCommentText(
                     event.target.value
                   )
                 }
-                placeholder="Add a comment..."
+
+                placeholder=
+                  "Add a comment..."
+
                 required
               />
+
 
               <button type="submit">
                 Add Comment
               </button>
+
             </form>
+
 
             {commentMessage && (
               <p className="message">
                 {commentMessage}
               </p>
             )}
+
           </section>
 
+
           <section className="panel">
-            <h2>Status History</h2>
+
+            <h2>
+              Status History
+            </h2>
+
 
             {history.length === 0 ? (
+
               <p>
                 No status history available.
               </p>
+
             ) : (
+
               <div className="history-list">
-                {history.map((item) => (
-                  <div
-                    className="history-item"
-                    key={
-                      item.history_id
-                    }
-                  >
-                    <strong>
-                      {item.old_status}
-                      {" → "}
-                      {item.new_status}
-                    </strong>
 
-                    <span>
-                      Changed by:{" "}
-                      {item.changed_by ||
-                        "Unknown"}
-                    </span>
+                {history.map(
+                  (item) => (
 
-                    <small>
-                      {item.changed_at ||
-                        ""}
-                    </small>
-                  </div>
-                ))}
+                    <div
+                      className="history-item"
+
+                      key={
+                        item.history_id
+                      }
+                    >
+
+                      <strong>
+                        {item.old_status}
+                        {" → "}
+                        {item.new_status}
+                      </strong>
+
+
+                      <span>
+                        Changed by:{" "}
+                        {
+                          item.changed_by ||
+                          "Unknown"
+                        }
+                      </span>
+
+
+                      <small>
+                        {
+                          item.changed_at ||
+                          ""
+                        }
+                      </small>
+
+                    </div>
+
+                  )
+                )}
+
               </div>
+
             )}
+
           </section>
+
 
           {detailsError && (
             <p className="message error">
               {detailsError}
             </p>
           )}
+
         </main>
+
       </div>
     );
   }
 
+
   return (
     <div className="app">
+
       <header className="topbar">
+
         <div>
           <h1>
             Campus ServiceDesk
           </h1>
 
           <p>
-            Welcome, {user.full_name} ·{" "}
+            Welcome,{" "}
+            {user.full_name}
+            {" · "}
             {user.role}
           </p>
         </div>
 
+
         <div className="header-actions">
+
           <button
-            className="secondary-button"
-            onClick={refreshAll}
+            className=
+              "secondary-button"
+
+            onClick={() =>
+              refreshAll()
+            }
           >
             Refresh
           </button>
 
+
           <button
-            className="secondary-button"
-            onClick={handleLogout}
+            className=
+              "secondary-button"
+
+            onClick=
+              {handleLogout}
           >
             Logout
           </button>
+
         </div>
+
       </header>
 
+
       <main className="content">
+
+
         <section className="panel">
+
           <div className="section-heading">
-            <h2>Dashboard</h2>
+
+            <h2>
+              Dashboard
+            </h2>
+
 
             <button
               onClick={() =>
@@ -980,7 +1430,9 @@ function App() {
             >
               Load Dashboard
             </button>
+
           </div>
+
 
           {dashboardError && (
             <p className="message error">
@@ -988,8 +1440,11 @@ function App() {
             </p>
           )}
 
+
           {dashboard ? (
+
             <div className="dashboard-grid">
+
               <div className="stat-card">
                 <span>
                   Total Tickets
@@ -997,20 +1452,26 @@ function App() {
 
                 <strong>
                   {
-                    dashboard.total_tickets
+                    dashboard
+                    .total_tickets
                   }
                 </strong>
               </div>
 
+
               <div className="stat-card">
-                <span>Open</span>
+                <span>
+                  Open
+                </span>
 
                 <strong>
                   {
-                    dashboard.open_tickets
+                    dashboard
+                    .open_tickets
                   }
                 </strong>
               </div>
+
 
               <div className="stat-card">
                 <span>
@@ -1019,10 +1480,12 @@ function App() {
 
                 <strong>
                   {
-                    dashboard.in_progress_tickets
+                    dashboard
+                    .in_progress_tickets
                   }
                 </strong>
               </div>
+
 
               <div className="stat-card">
                 <span>
@@ -1031,10 +1494,12 @@ function App() {
 
                 <strong>
                   {
-                    dashboard.resolved_tickets
+                    dashboard
+                    .resolved_tickets
                   }
                 </strong>
               </div>
+
 
               <div className="stat-card">
                 <span>
@@ -1043,10 +1508,12 @@ function App() {
 
                 <strong>
                   {
-                    dashboard.high_priority_tickets
+                    dashboard
+                    .high_priority_tickets
                   }
                 </strong>
               </div>
+
 
               <div className="stat-card">
                 <span>
@@ -1055,87 +1522,151 @@ function App() {
 
                 <strong>
                   {
-                    dashboard.unassigned_tickets
+                    dashboard
+                    .unassigned_tickets
                   }
                 </strong>
               </div>
+
             </div>
+
           ) : (
+
             <p>
               Click Load Dashboard to
               retrieve current statistics.
             </p>
+
           )}
+
         </section>
 
+
         <section className="panel">
-          <h2>Create Ticket</h2>
+
+          <h2>
+            Create Ticket
+          </h2>
+
 
           <form
             className="ticket-form"
-            onSubmit={createTicket}
+
+            onSubmit=
+              {createTicket}
           >
-            <label>Title</label>
+
+            <label>
+              Title
+            </label>
+
 
             <input
               type="text"
+
               value={title}
+
               onChange={(event) =>
                 setTitle(
                   event.target.value
                 )
               }
-              placeholder="Brief description of the issue"
+
+              placeholder=
+                "Brief description of the issue"
+
               required
             />
+
 
             <label>
               Description
             </label>
 
+
             <textarea
               value={description}
+
               onChange={(event) =>
                 setDescription(
                   event.target.value
                 )
               }
-              placeholder="Describe the issue..."
+
+              placeholder=
+                "Describe the issue..."
+
               required
             />
 
+
             <div className="form-row">
+
               <div>
+
                 <label>
                   Category
                 </label>
 
-                <input
-                  type="text"
+
+                <select
                   value={category}
+
                   onChange={(event) =>
                     setCategory(
                       event.target.value
                     )
                   }
-                  placeholder="Hardware, Network..."
+
                   required
-                />
+                >
+
+                  <option value="">
+                    Select category
+                  </option>
+
+                  <option value="Hardware">
+                    Hardware
+                  </option>
+
+                  <option value="Software">
+                    Software
+                  </option>
+
+                  <option value="Network">
+                    Network
+                  </option>
+
+                  <option value="Access">
+                    Access
+                  </option>
+
+                  <option value="Other">
+                    Other
+                  </option>
+
+                </select>
+
               </div>
 
+
               <div>
+
                 <label>
                   Priority
                 </label>
 
+
                 <select
                   value={priority}
+
                   onChange={(event) =>
                     setPriority(
                       event.target.value
                     )
                   }
                 >
+
                   <option value="LOW">
                     LOW
                   </option>
@@ -1151,25 +1682,141 @@ function App() {
                   <option value="CRITICAL">
                     CRITICAL
                   </option>
+
                 </select>
+
               </div>
+
             </div>
+
+
+            <div className="form-row">
+
+              <div>
+
+                <label>
+                  Department
+                </label>
+
+
+                <select
+                  value={departmentId}
+
+                  onChange={(event) => {
+                    setDepartmentId(
+                      event.target.value
+                    );
+
+                    setAssetId("");
+                  }}
+                >
+
+                  <option value="">
+                    No department
+                  </option>
+
+
+                  {departments.map(
+                    (department) => (
+
+                      <option
+                        key={
+                          department
+                          .department_id
+                        }
+
+                        value={
+                          department
+                          .department_id
+                        }
+                      >
+                        {
+                          department
+                          .department_name
+                        }
+                      </option>
+
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+
+              <div>
+
+                <label>
+                  Asset
+                </label>
+
+
+                <select
+                  value={assetId}
+
+                  onChange={(event) =>
+                    setAssetId(
+                      event.target.value
+                    )
+                  }
+                >
+
+                  <option value="">
+                    No asset
+                  </option>
+
+
+                  {filteredAssets.map(
+                    (asset) => (
+
+                      <option
+                        key={
+                          asset.asset_id
+                        }
+
+                        value={
+                          asset.asset_id
+                        }
+                      >
+                        {
+                          asset.asset_name
+                        }
+                      </option>
+
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+            </div>
+
 
             <button type="submit">
               Create Ticket
             </button>
+
           </form>
+
 
           {ticketMessage && (
             <p className="message">
               {ticketMessage}
             </p>
           )}
+
         </section>
 
+
         <section className="panel">
+
           <div className="section-heading">
-            <h2>Tickets</h2>
+
+            <h2>
+              Tickets
+            </h2>
+
 
             <button
               onClick={() =>
@@ -1178,7 +1825,9 @@ function App() {
             >
               Load Tickets
             </button>
+
           </div>
+
 
           {ticketsError && (
             <p className="message error">
@@ -1186,37 +1835,52 @@ function App() {
             </p>
           )}
 
+
           {tickets.length === 0 ? (
-            <p>No tickets loaded.</p>
+
+            <p>
+              No tickets loaded.
+            </p>
+
           ) : (
+
             <div className="ticket-list">
+
               {tickets.map(
                 (ticket) => (
+
                   <button
                     className="ticket-card"
+
                     key={
                       ticket.ticket_id
                     }
+
                     onClick={() =>
                       openTicket(
                         ticket.ticket_id
                       )
                     }
                   >
-                    <div className="ticket-card-header">
+
+                    <div
+                      className=
+                        "ticket-card-header"
+                    >
+
                       <h3>
                         {ticket.title}
                       </h3>
 
                       <span>
-                        #
-                        {
-                          ticket.ticket_id
-                        }
+                        #{ticket.ticket_id}
                       </span>
+
                     </div>
 
+
                     <div className="ticket-meta">
+
                       <span>
                         Status:{" "}
                         {ticket.status}
@@ -1234,19 +1898,30 @@ function App() {
 
                       <span>
                         Requester:{" "}
-                        {ticket.requester ||
-                          "Unknown"}
+                        {
+                          ticket.requester ||
+                          "Unknown"
+                        }
                       </span>
+
                     </div>
+
                   </button>
+
                 )
               )}
+
             </div>
+
           )}
+
         </section>
+
       </main>
+
     </div>
   );
 }
+
 
 export default App;
