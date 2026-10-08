@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.database import test_database_connection
 from app.routers import tickets, dashboard, auth
+from app.routers import technicians
 from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(
     title="Campus ServiceDesk API",
@@ -18,7 +19,7 @@ app.add_middleware(
 app.include_router(tickets.router)
 app.include_router(dashboard.router)
 app.include_router(auth.router)
-
+app.include_router(technicians.router)
 
 @app.get("/")
 def root():
