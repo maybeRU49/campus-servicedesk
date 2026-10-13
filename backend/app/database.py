@@ -1,12 +1,13 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-DATABASE_URL = URL.create(
+DATABASE_URL = os.getenv("DATABASE_URL") or URL.create(
     drivername="mysql+pymysql",
     username=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
@@ -29,5 +30,8 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

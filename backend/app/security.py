@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from pathlib import Path
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
@@ -12,8 +13,9 @@ from app.database import get_db
 import jwt
 from dotenv import load_dotenv
 from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -28,13 +30,24 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
 if not JWT_SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY is missing from the .env file")
 
+if JWT_ALGORITHM not in {"HS256", "HS384", "HS512"}:
+    raise RuntimeError("JWT_ALGORITHM must be HS256, HS384 or HS512")
+if len(JWT_SECRET_KEY.encode()) < 32:
+    raise RuntimeError("JWT_SECRET_KEY must contain at least 32 bytes")
+if ACCESS_TOKEN_EXPIRE_MINUTES <= 0:
+    raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be positive")
+
 
 def hash_password(password: str) -> str:
     return password_hash.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return password_hash.verify(plain_password, hashed_password)
+    try:
+        return password_hash.verify(plain_password, hashed_password)
+    except (UnknownHashError, ValueError):
+        # Seed placeholders and corrupt hashes must fail authentication safely.
+        return False
 
 
 def create_access_token(
@@ -45,13 +58,12 @@ def create_access_token(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
-    payload: dict[str, Any] = {
+    payload: dict[str, Any] = dict(additional_claims or {})
+    payload.update({
         "sub": subject,
-        "exp": expires_at
-    }
-
-    if additional_claims:
-        payload.update(additional_claims)
+        "exp": expires_at,
+        "iat": datetime.now(timezone.utc),
+    })
 
     return jwt.encode(
         payload,
@@ -64,7 +76,8 @@ def decode_access_token(token: str) -> dict[str, Any]:
     return jwt.decode(
         token,
         JWT_SECRET_KEY,
-        algorithms=[JWT_ALGORITHM]
+        algorithms=[JWT_ALGORITHM],
+        options={"require": ["sub", "exp"]},
     )
 
 def get_current_user(

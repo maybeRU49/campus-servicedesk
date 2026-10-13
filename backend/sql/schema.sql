@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS ticket_assignments (
     technician_id INT NOT NULL,
     assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+    CONSTRAINT uq_assignments_ticket UNIQUE (ticket_id),
+
     CONSTRAINT fk_assignments_ticket
         FOREIGN KEY (ticket_id) REFERENCES tickets(ticket_id),
 
