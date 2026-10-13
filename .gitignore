@@ -1,1 +1,25 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Python environments and caches
 PyRU49/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+# Frontend build/dependencies
+node_modules/
+dist/
+# Tools and temporary output
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+.tmp/

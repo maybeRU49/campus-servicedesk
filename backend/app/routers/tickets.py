@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.access import require_ticket_access, ticket_scope
 from app.security import get_current_user, require_roles
 
 
@@ -114,24 +115,27 @@ def get_tickets(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    scope, params = ticket_scope(current_user)
     result = db.execute(
-        text("""
+        text(f"""
             SELECT
-                ticket_id,
-                title,
-                category,
-                priority,
-                status,
-                requester,
-                department_name,
-                asset_name,
-                assigned_technician,
-                created_at,
-                updated_at,
-                resolved_at
-            FROM vw_ticket_details
-            ORDER BY created_at DESC;
-        """)
+                v.ticket_id,
+                v.title,
+                v.category,
+                v.priority,
+                v.status,
+                v.requester,
+                v.department_name,
+                v.asset_name,
+                v.assigned_technician,
+                v.created_at,
+                v.updated_at,
+                v.resolved_at
+            FROM vw_ticket_details v
+            JOIN tickets t ON t.ticket_id = v.ticket_id
+            WHERE {scope}
+            ORDER BY v.created_at DESC, v.ticket_id DESC;
+        """), params
     )
 
     tickets = [
@@ -151,6 +155,7 @@ def get_ticket_by_id(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    require_ticket_access(db, ticket_id, current_user)
     ticket = get_ticket_detail(
         db,
         ticket_id
@@ -246,6 +251,7 @@ def update_ticket_status(
     ),
     db: Session = Depends(get_db)
 ):
+    require_ticket_access(db, ticket_id, current_user, lock=True)
     new_status = status_update.new_status
 
     try:
@@ -365,6 +371,7 @@ def get_ticket_status_history(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    require_ticket_access(db, ticket_id, current_user)
     ticket = db.execute(
         text("""
             SELECT ticket_id
@@ -428,6 +435,7 @@ def assign_ticket(
     ),
     db: Session = Depends(get_db)
 ):
+    require_ticket_access(db, ticket_id, current_user, lock=True)
     try:
         ticket = db.execute(
             text("""
@@ -618,6 +626,7 @@ def get_ticket_comments(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    require_ticket_access(db, ticket_id, current_user)
     ticket = db.execute(
         text("""
             SELECT ticket_id
@@ -677,6 +686,7 @@ def add_ticket_comment(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    require_ticket_access(db, ticket_id, current_user)
     ticket = db.execute(
         text("""
             SELECT ticket_id

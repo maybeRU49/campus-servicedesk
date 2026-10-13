@@ -2,68 +2,39 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.access import ticket_scope
 from app.database import get_db
+from app.security import get_current_user
 
-router = APIRouter(
-    prefix="/dashboard",
-    tags=["Dashboard"]
-)
+router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 @router.get("/summary")
-def get_dashboard_summary(db: Session = Depends(get_db)):
-    total_tickets = db.execute(
-        text("SELECT COUNT(*) FROM tickets")
-    ).scalar()
-
-    open_tickets = db.execute(
-        text("SELECT COUNT(*) FROM tickets WHERE status = 'OPEN'")
-    ).scalar()
-
-    in_progress_tickets = db.execute(
-        text("SELECT COUNT(*) FROM tickets WHERE status = 'IN_PROGRESS'")
-    ).scalar()
-
-    resolved_tickets = db.execute(
-        text("SELECT COUNT(*) FROM tickets WHERE status = 'RESOLVED'")
-    ).scalar()
-
-    high_priority_tickets = db.execute(
-        text("SELECT COUNT(*) FROM tickets WHERE priority = 'HIGH'")
-    ).scalar()
-
-    unassigned_tickets = db.execute(
-        text("""
-            SELECT COUNT(*)
-            FROM tickets t
-            LEFT JOIN ticket_assignments ta ON t.ticket_id = ta.ticket_id
-            WHERE ta.assignment_id IS NULL;
-        """)
-    ).scalar()
-
-    tickets_by_status = db.execute(
-        text("""
-            SELECT status, COUNT(*) AS count
-            FROM tickets
-            GROUP BY status;
-        """)
-    )
-
-    tickets_by_category = db.execute(
-        text("""
-            SELECT category, COUNT(*) AS count
-            FROM tickets
-            GROUP BY category;
-        """)
-    )
-
-    return {
-        "total_tickets": total_tickets,
-        "open_tickets": open_tickets,
-        "in_progress_tickets": in_progress_tickets,
-        "resolved_tickets": resolved_tickets,
-        "high_priority_tickets": high_priority_tickets,
-        "unassigned_tickets": unassigned_tickets,
-        "tickets_by_status": [dict(row._mapping) for row in tickets_by_status],
-        "tickets_by_category": [dict(row._mapping) for row in tickets_by_category]
-    }
+def get_dashboard_summary(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    scope, params = ticket_scope(current_user)
+    summary = dict(db.execute(text(f"""
+        SELECT COUNT(*) AS total_tickets,
+          COALESCE(SUM(CASE WHEN t.status = 'OPEN' THEN 1 ELSE 0 END), 0) AS open_tickets,
+          COALESCE(SUM(CASE WHEN t.status = 'IN_PROGRESS' THEN 1 ELSE 0 END), 0) AS in_progress_tickets,
+          COALESCE(SUM(CASE WHEN t.status = 'RESOLVED' THEN 1 ELSE 0 END), 0) AS resolved_tickets,
+          COALESCE(SUM(CASE WHEN t.status = 'CLOSED' THEN 1 ELSE 0 END), 0) AS closed_tickets,
+          COALESCE(SUM(CASE WHEN t.priority IN ('HIGH', 'CRITICAL') THEN 1 ELSE 0 END), 0) AS high_priority_tickets,
+          COALESCE(SUM(CASE WHEN NOT EXISTS (
+            SELECT 1 FROM ticket_assignments ta WHERE ta.ticket_id = t.ticket_id
+          ) THEN 1 ELSE 0 END), 0) AS unassigned_tickets
+        FROM tickets t WHERE {scope}
+    """), params).mappings().one())
+    for field in ("status", "category"):
+        rows = db.execute(text(f"""
+            SELECT t.{field}, COUNT(*) AS count FROM tickets t
+            WHERE {scope} GROUP BY t.{field} ORDER BY t.{field}
+        """), params).mappings().all()
+        summary[f"tickets_by_{field}"] = [dict(row) for row in rows]
+    summary["scope"] = {
+        "ADMIN": "All campus tickets", "TECHNICIAN": "Assigned to me",
+        "STUDENT": "My tickets", "STAFF": "My tickets",
+    }[current_user["role_name"]]
+    return summary
